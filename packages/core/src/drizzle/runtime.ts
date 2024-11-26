@@ -38,19 +38,19 @@ import type { BuildAliasTable } from "./select.js";
 
 export const createDrizzleDb = (database: Database) => {
   if (database.dialect === "postgres") {
-    const drizzle = drizzlePg(database.driver.readonly as Pool);
+    const drizzle = drizzlePg(database.driver.user as Pool);
     return {
       // @ts-ignore
-      insert: (...args: any[]) => drizzle.insert(...args),
+      insert: (...args: any) => drizzle.insert(...args),
       // @ts-ignore
       select: (...args: any[]) => drizzle.select(...args),
       execute: (query: any) => drizzle.execute(query),
     };
   } else {
-    const drizzle = drizzleSQLite(database.driver.readonly as SqliteDatabase);
+    const drizzle = drizzleSQLite(database.driver.user as SqliteDatabase);
     return {
       // @ts-ignore
-      insert: (...args: any[]) => drizzle.insert(...args),
+      insert: (...args: any) => drizzle.insert(...args),
       // @ts-ignore
       select: (...args: any[]) => drizzle.select(...args),
       execute: (query: any) => {

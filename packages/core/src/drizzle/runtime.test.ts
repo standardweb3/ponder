@@ -14,6 +14,34 @@ import { createDrizzleDb, createDrizzleTables } from "./runtime.js";
 beforeEach(setupCommon);
 beforeEach(setupIsolatedDatabase);
 
+test("runtime insert", async (context) => {
+  const schema = createSchema((p) => ({
+    table: p.createTable({
+      id: p.string(),
+    }),
+  }));
+
+  const { database, cleanup, indexingStore } = await setupDatabaseServices(
+    context,
+    { schema },
+  );
+
+  await indexingStore.create({ tableName: "table", id: "kyle" });
+  await (indexingStore as HistoricalStore).flush({ isFullFlush: true });
+
+  const db = createDrizzleDb(database) as unknown as DrizzleDb;
+
+  const drizzleTables = createDrizzleTables(schema, database) as Context<
+    typeof schema
+  >["tables"];
+
+  const rows = await db.insert(drizzleTables.table).values({
+    id: "kyle2",
+  });
+
+  await cleanup();
+});
+
 test("runtime select", async (context) => {
   const schema = createSchema((p) => ({
     table: p.createTable({

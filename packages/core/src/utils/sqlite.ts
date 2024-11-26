@@ -31,7 +31,8 @@ function improveSqliteErrors(database: BetterSqlite3.Database) {
           const error = error_ as Error & { detail?: string; meta?: string[] };
           error.name = "SqliteError";
 
-          let parameters = (args[0] ?? []) as string[];
+          let parameters = Array.isArray(args[0]) ? args[0] : [args[0] ?? []];
+          console.log("parameters", parameters);
           parameters =
             parameters.length <= 25
               ? parameters
@@ -80,7 +81,7 @@ export function createReadonlySqliteDatabase(
   options?: BetterSqlite3.Options,
 ): SqliteDatabase {
   ensureDirExists(file);
-  const database = new BetterSqlite3(file, { readonly: true, ...options });
+  const database = new BetterSqlite3(file, { readonly: false, ...options });
   improveSqliteErrors(database);
   database.pragma("journal_mode = WAL");
   return database;
