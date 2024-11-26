@@ -1,5 +1,5 @@
 {
-  "name": "@standardweb3/ponder-offchain-database-core",
+  "name": "@standardweb3/core",
   "version": "0.6.23",
   "description": "An open-source framework for crypto application backends",
   "license": "MIT",
