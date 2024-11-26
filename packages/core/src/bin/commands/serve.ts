@@ -50,11 +50,11 @@ export async function serve({ cliOptions }: { cliOptions: CliOptions }) {
 
   const shutdown = setupShutdown({ common, cleanup });
 
-  const buildResult = await buildService.start({ watch: false });
+  const { api, indexing } = await buildService.start({ watch: false });
   // Once we have the initial build, we can kill the build service.
   await buildService.kill();
 
-  if (buildResult.status === "error") {
+  if (api.status === "error" || indexing.status === "error") {
     await shutdown({ reason: "Failed intial build", code: 1 });
     return cleanup;
   }
@@ -63,16 +63,15 @@ export async function serve({ cliOptions }: { cliOptions: CliOptions }) {
     name: "lifecycle:session_start",
     properties: {
       cli_command: "serve",
-      ...buildPayload(buildResult.indexingBuild),
+      ...buildPayload(indexing.build),
     },
   });
 
-  const { databaseConfig, schema, instanceId, buildId, statements, namespace } =
-    buildResult.apiBuild;
+  const { databaseConfig, schema } = api.build;
 
-  if (databaseConfig.kind === "pglite") {
+  if (databaseConfig.kind === "sqlite") {
     await shutdown({
-      reason: "The 'ponder serve' command does not support PGlite",
+      reason: "The 'ponder serve' command does not support SQLite",
       code: 1,
     });
     return cleanup;
@@ -82,22 +81,14 @@ export async function serve({ cliOptions }: { cliOptions: CliOptions }) {
     common,
     schema,
     databaseConfig,
-    instanceId,
-    buildId,
-    statements,
-    namespace,
   });
 
   const server = await createServer({
+    app: api.build.app,
+    routes: api.build.routes,
     common,
-    app: buildResult.apiBuild.app,
-    routes: buildResult.apiBuild.routes,
-    graphqlSchema: buildResult.indexingBuild.graphqlSchema,
+    schema,
     database,
-    instanceId:
-      process.env.PONDER_EXPERIMENTAL_INSTANCE_ID === undefined
-        ? undefined
-        : instanceId,
   });
 
   cleanupReloadable = async () => {

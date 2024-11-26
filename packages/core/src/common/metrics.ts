@@ -57,9 +57,11 @@ export class MetricsService {
   ponder_rpc_request_duration: prometheus.Histogram<"network" | "method">;
   ponder_rpc_request_lag: prometheus.Histogram<"network" | "method">;
 
-  ponder_postgres_query_total: prometheus.Counter<"pool">;
-  ponder_postgres_query_queue_size: prometheus.Gauge<"pool"> = null!;
   ponder_postgres_pool_connections: prometheus.Gauge<"pool" | "kind"> = null!;
+  ponder_postgres_query_queue_size: prometheus.Gauge<"pool"> = null!;
+  ponder_postgres_query_total: prometheus.Counter<"pool"> = null!;
+
+  ponder_sqlite_query_total: prometheus.Counter<"database"> = null!;
 
   constructor() {
     this.registry = new prometheus.Registry();
@@ -218,13 +220,6 @@ export class MetricsService {
       registers: [this.registry],
     });
 
-    this.ponder_postgres_query_total = new prometheus.Counter({
-      name: "ponder_postgres_query_total",
-      help: "Total number of queries submitted to the database",
-      labelNames: ["pool"] as const,
-      registers: [this.registry],
-    });
-
     prometheus.collectDefaultMetrics({ register: this.registry });
   }
 
@@ -261,6 +256,7 @@ export class MetricsService {
     this.ponder_postgres_pool_connections?.reset();
     this.ponder_postgres_query_queue_size?.reset();
     this.ponder_postgres_query_total?.reset();
+    this.ponder_sqlite_query_total?.reset();
   }
 
   resetApiMetrics() {
@@ -320,12 +316,11 @@ export async function getSyncProgress(metrics: MetricsService): Promise<
   const requestCount: { [network: string]: number } = {};
   const rpcRequestMetrics = await metrics.ponder_rpc_request_duration.get();
   for (const m of rpcRequestMetrics.values) {
-    const network = m.labels.network!;
     if (m.metricName === "ponder_rpc_request_duration_count") {
-      if (requestCount[network] === undefined) {
-        requestCount[network] = 0;
+      if (requestCount[m.labels.network!] === undefined) {
+        requestCount[m.labels.network!] = 0;
       }
-      requestCount[m.labels.network!]! += m.value;
+      requestCount[m.labels.network!] += m.value;
     }
   }
 

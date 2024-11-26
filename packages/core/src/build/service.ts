@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { Common } from "@/common/common.js";
@@ -7,9 +6,9 @@ import { BuildError } from "@/common/errors.js";
 import type { Config } from "@/config/config.js";
 import type { DatabaseConfig } from "@/config/database.js";
 import type { Network } from "@/config/networks.js";
-import type { Schema } from "@/drizzle/index.js";
-import type { SqlStatements } from "@/drizzle/kit/index.js";
+import { buildGraphQLSchema } from "@/graphql/buildGraphqlSchema.js";
 import type { PonderRoutes } from "@/hono/index.js";
+import type { Schema } from "@/schema/common.js";
 import type { Source } from "@/sync/source.js";
 import { serialize } from "@/utils/serialize.js";
 import { glob } from "glob";
@@ -49,15 +48,12 @@ export type Service = {
 type BaseBuild = {
   // Build ID for caching
   buildId: string;
-  instanceId: string;
   // Config
   databaseConfig: DatabaseConfig;
   sources: Source[];
   networks: Network[];
   // Schema
   schema: Schema;
-  statements: SqlStatements;
-  namespace: string;
   graphqlSchema: GraphQLSchema;
 };
 
@@ -70,34 +66,11 @@ export type ApiBuild = BaseBuild & {
   routes: PonderRoutes;
 };
 
-export type BuildResult =
-  | {
-      status: "success";
-      indexingBuild: IndexingBuild;
-      apiBuild: ApiBuild;
-    }
-  | { status: "error"; error: Error };
-
-export type BuildResultDev =
-  | {
-      status: "success";
-      kind: "indexing";
-      indexingBuild: IndexingBuild;
-      apiBuild: ApiBuild;
-    }
-  | {
-      status: "success";
-      kind: "api";
-      indexingBuild?: never;
-      apiBuild: ApiBuild;
-    }
-  | { status: "error"; kind: "indexing" | "api"; error: Error };
-
-type IndexingBuildResult =
+export type IndexingBuildResult =
   | { status: "success"; build: IndexingBuild }
   | { status: "error"; error: Error };
 
-type ApiBuildResult =
+export type ApiBuildResult =
   | { status: "success"; build: ApiBuild }
   | { status: "error"; error: Error };
 
@@ -200,22 +173,17 @@ export const start = async (
   buildService: Service,
   {
     watch,
-    onBuild,
+    onIndexingBuild,
+    onApiBuild,
   }:
     | {
         watch: true;
-        onBuild: (buildResult: BuildResultDev) => void;
+        onIndexingBuild: (buildResult: IndexingBuildResult) => void;
+        onApiBuild: (buildResult: ApiBuildResult) => void;
       }
-    | { watch: false; onBuild?: never },
-): Promise<BuildResult> => {
+    | { watch: false; onIndexingBuild?: never; onApiBuild?: never },
+): Promise<{ indexing: IndexingBuildResult; api: ApiBuildResult }> => {
   const { common } = buildService;
-
-  if (common.options.command !== "serve") {
-    // @ts-ignore
-    globalThis.__PONDER_INSTANCE_ID =
-      process.env.PONDER_EXPERIMENTAL_INSTANCE_ID ??
-      crypto.randomBytes(2).toString("hex");
-  }
 
   // Note: Don't run these in parallel. If there are circular imports in user code,
   // it's possible for ViteNodeRunner to return exports as undefined (a race condition).
@@ -225,16 +193,28 @@ export const start = async (
   const apiResult = await executeApiRoutes(buildService);
 
   if (configResult.status === "error") {
-    return { status: "error", error: configResult.error };
+    return {
+      indexing: { status: "error", error: configResult.error },
+      api: { status: "error", error: configResult.error },
+    };
   }
   if (schemaResult.status === "error") {
-    return { status: "error", error: schemaResult.error };
+    return {
+      indexing: { status: "error", error: schemaResult.error },
+      api: { status: "error", error: schemaResult.error },
+    };
   }
   if (indexingResult.status === "error") {
-    return { status: "error", error: indexingResult.error };
+    return {
+      indexing: { status: "error", error: indexingResult.error },
+      api: { status: "error", error: indexingResult.error },
+    };
   }
   if (apiResult.status === "error") {
-    return { status: "error", error: apiResult.error };
+    return {
+      indexing: { status: "error", error: apiResult.error },
+      api: { status: "error", error: apiResult.error },
+    };
   }
 
   let cachedConfigResult = configResult;
@@ -289,7 +269,6 @@ export const start = async (
       const hasSchemaUpdate = invalidated.includes(
         common.options.schemaFile.replace(/\\/g, "/"),
       );
-
       const hasIndexingUpdate = invalidated.some(
         (file) =>
           buildService.indexingRegex.test(file) &&
@@ -317,58 +296,37 @@ export const start = async (
           .join(", ")}`,
       });
 
-      // re-execute anything that would cause the instance id to change
-      if (hasIndexingUpdate || hasSchemaUpdate || hasConfigUpdate) {
-        // @ts-ignore
-        globalThis.__PONDER_INSTANCE_ID =
-          process.env.PONDER_EXPERIMENTAL_INSTANCE_ID ??
-          crypto.randomBytes(2).toString("hex");
+      if (hasConfigUpdate) {
+        const result = await executeConfig(buildService);
+        if (result.status === "error") {
+          onIndexingBuild({ status: "error", error: result.error });
+          return;
+        }
+        cachedConfigResult = result;
+      }
 
-        buildService.viteNodeRunner.moduleCache.invalidateDepTree([
-          buildService.common.options.configFile,
-        ]);
-        buildService.viteNodeRunner.moduleCache.invalidateDepTree([
-          buildService.common.options.schemaFile,
-        ]);
-        buildService.viteNodeRunner.moduleCache.invalidateDepTree(
-          glob.sync(buildService.indexingPattern, {
-            ignore: buildService.apiPattern,
-          }),
-        );
+      if (hasSchemaUpdate) {
+        const result = await executeSchema(buildService);
+        if (result.status === "error") {
+          onIndexingBuild({ status: "error", error: result.error });
+          return;
+        }
+        cachedSchemaResult = result;
+      }
+
+      if (hasIndexingUpdate) {
+        const files = glob.sync(buildService.indexingPattern, {
+          ignore: buildService.apiPattern,
+        });
+        buildService.viteNodeRunner.moduleCache.invalidateDepTree(files);
         buildService.viteNodeRunner.moduleCache.deleteByModuleId("@/generated");
 
-        const configResult = await executeConfig(buildService);
-        const schemaResult = await executeSchema(buildService);
-        const indexingResult = await executeIndexingFunctions(buildService);
-
-        if (configResult.status === "error") {
-          onBuild({
-            status: "error",
-            kind: "indexing",
-            error: configResult.error,
-          });
+        const result = await executeIndexingFunctions(buildService);
+        if (result.status === "error") {
+          onIndexingBuild({ status: "error", error: result.error });
           return;
         }
-        if (schemaResult.status === "error") {
-          onBuild({
-            status: "error",
-            kind: "indexing",
-            error: schemaResult.error,
-          });
-          return;
-        }
-        if (indexingResult.status === "error") {
-          onBuild({
-            status: "error",
-            kind: "indexing",
-            error: indexingResult.error,
-          });
-          return;
-        }
-
-        cachedConfigResult = configResult;
-        cachedSchemaResult = schemaResult;
-        cachedIndexingResult = indexingResult;
+        cachedIndexingResult = result;
       }
 
       if (hasApiUpdate) {
@@ -378,7 +336,7 @@ export const start = async (
 
         const result = await executeApiRoutes(buildService);
         if (result.status === "error") {
-          onBuild({ status: "error", kind: "api", error: result.error });
+          onApiBuild({ status: "error", error: result.error });
           return;
         }
         cachedApiResult = result;
@@ -404,58 +362,35 @@ export const start = async (
         cachedIndexingResult,
       );
       if (indexingBuildResult.status === "error") {
-        onBuild({
-          status: "error",
-          kind: "indexing",
-          error: indexingBuildResult.error,
-        });
+        onIndexingBuild(indexingBuildResult);
+        onApiBuild(indexingBuildResult);
         return;
       }
 
       // If schema or config is updated, rebuild both api and indexing
-      if (hasConfigUpdate || hasSchemaUpdate || hasIndexingUpdate) {
-        const apiBuildResult = validateAndBuildApi(
-          buildService,
-          indexingBuildResult.build,
-          cachedApiResult,
+      if (hasConfigUpdate || hasSchemaUpdate) {
+        onIndexingBuild(indexingBuildResult);
+        onApiBuild(
+          validateAndBuildApi(
+            buildService,
+            indexingBuildResult.build,
+            cachedApiResult,
+          ),
         );
-
-        if (apiBuildResult.status === "error") {
-          onBuild({
-            status: "error",
-            kind: "api",
-            error: apiBuildResult.error,
-          });
-          return;
-        }
-
-        onBuild({
-          status: "success",
-          kind: "indexing",
-          indexingBuild: indexingBuildResult.build,
-          apiBuild: apiBuildResult.build,
-        });
       } else {
-        const apiBuildResult = validateAndBuildApi(
-          buildService,
-          indexingBuildResult.build,
-          cachedApiResult,
-        );
-
-        if (apiBuildResult.status === "error") {
-          onBuild({
-            status: "error",
-            kind: "api",
-            error: apiBuildResult.error,
-          });
-          return;
+        if (hasIndexingUpdate) {
+          onIndexingBuild(indexingBuildResult);
         }
 
-        onBuild({
-          status: "success",
-          kind: "api",
-          apiBuild: apiBuildResult.build,
-        });
+        if (hasApiUpdate) {
+          onApiBuild(
+            validateAndBuildApi(
+              buildService,
+              indexingBuildResult.build,
+              cachedApiResult,
+            ),
+          );
+        }
       }
     };
 
@@ -475,8 +410,8 @@ export const start = async (
 
   if (initialBuildResult.status === "error") {
     return {
-      status: "error",
-      error: initialBuildResult.error,
+      indexing: { status: "error", error: initialBuildResult.error },
+      api: { status: "error", error: initialBuildResult.error },
     };
   }
 
@@ -486,17 +421,9 @@ export const start = async (
     apiResult,
   );
 
-  if (initialApiBuildResult.status === "error") {
-    return {
-      status: "error",
-      error: initialApiBuildResult.error,
-    };
-  }
-
   return {
-    status: "success",
-    indexingBuild: initialBuildResult.build,
-    apiBuild: initialApiBuildResult.build,
+    indexing: initialBuildResult,
+    api: initialApiBuildResult,
   };
 };
 
@@ -557,17 +484,13 @@ const executeSchema = async (
     return executeResult;
   }
 
-  const schema = executeResult.exports;
+  const schema = executeResult.exports.default as Schema;
 
-  const contents = fs.readFileSync(
-    buildService.common.options.schemaFile,
-    "utf-8",
-  );
-  return {
-    status: "success",
-    schema,
-    contentHash: createHash("sha256").update(contents).digest("hex"),
-  };
+  const contentHash = createHash("sha256")
+    .update(serialize(schema))
+    .digest("hex");
+
+  return { status: "success", schema, contentHash };
 };
 
 const executeIndexingFunctions = async (
@@ -685,10 +608,6 @@ const validateAndBuild = async (
   // Validate and build the schema
   const buildSchemaResult = safeBuildSchema({
     schema: schema.schema,
-    instanceId:
-      process.env.PONDER_EXPERIMENTAL_INSTANCE_ID ??
-      // @ts-ignore
-      globalThis.__PONDER_INSTANCE_ID,
   });
   if (buildSchemaResult.status === "error") {
     common.logger.error({
@@ -699,6 +618,12 @@ const validateAndBuild = async (
 
     return buildSchemaResult;
   }
+
+  for (const log of buildSchemaResult.logs) {
+    common.logger[log.level]({ service: "build", msg: log.msg });
+  }
+
+  const graphqlSchema = buildGraphQLSchema(buildSchemaResult.schema);
 
   // Validates and build the config
   const buildConfigAndIndexingFunctionsResult =
@@ -738,19 +663,13 @@ const validateAndBuild = async (
     status: "success",
     build: {
       buildId,
-      instanceId:
-        process.env.PONDER_EXPERIMENTAL_INSTANCE_ID ??
-        // @ts-ignore
-        globalThis.__PONDER_INSTANCE_ID,
       databaseConfig: buildConfigAndIndexingFunctionsResult.databaseConfig,
       networks: buildConfigAndIndexingFunctionsResult.networks,
       sources: buildConfigAndIndexingFunctionsResult.sources,
+      schema: buildSchemaResult.schema,
+      graphqlSchema,
       indexingFunctions:
         buildConfigAndIndexingFunctionsResult.indexingFunctions,
-      schema: schema.schema,
-      statements: buildSchemaResult.statements,
-      namespace: buildSchemaResult.namespace,
-      graphqlSchema: buildSchemaResult.graphqlSchema,
     },
   };
 };

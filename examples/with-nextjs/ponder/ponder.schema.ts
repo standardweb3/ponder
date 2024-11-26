@@ -1,8 +1,10 @@
-import { onchainTable } from "@ponder/core";
+import { createSchema } from "@ponder/core";
 
-export const depositEvent = onchainTable("deposit_event", (t) => ({
-  id: t.text().primaryKey(),
-  timestamp: t.integer().notNull(),
-  amount: t.bigint().notNull(),
-  account: t.hex().notNull(),
+export default createSchema((p) => ({
+  DepositEvent: p.createTable({
+    id: p.string(),
+    timestamp: p.int(),
+    amount: p.bigint(),
+    account: p.string(),
+  }),
 }));

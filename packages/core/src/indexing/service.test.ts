@@ -7,17 +7,11 @@ import {
   setupIsolatedDatabase,
 } from "@/_test/setup.js";
 import { getEventsBlock, getEventsLog, getEventsTrace } from "@/_test/utils.js";
-import { onchainTable } from "@/drizzle/index.js";
+import { createSchema } from "@/schema/schema.js";
 import { createSync } from "@/sync/index.js";
 import { encodeCheckpoint, zeroCheckpoint } from "@/utils/checkpoint.js";
 import { promiseWithResolvers } from "@ponder/common";
-import {
-  type Address,
-  checksumAddress,
-  parseEther,
-  toHex,
-  zeroAddress,
-} from "viem";
+import { type Address, checksumAddress, parseEther, toHex } from "viem";
 import { beforeEach, expect, test, vi } from "vitest";
 import { decodeEvents } from "../sync/events.js";
 import {
@@ -26,19 +20,22 @@ import {
   kill,
   processEvents,
   processSetupEvents,
-  setIndexingStore,
 } from "./service.js";
 
 beforeEach(setupCommon);
 beforeEach(setupAnvil);
 beforeEach(setupIsolatedDatabase);
 
-const account = onchainTable("account", (p) => ({
-  address: p.hex().primaryKey(),
-  balance: p.bigint().notNull(),
+const schema = createSchema((p) => ({
+  TransferEvent: p.createTable({
+    id: p.string(),
+    timestamp: p.int(),
+  }),
+  Supply: p.createTable({
+    id: p.string(),
+    supply: p.bigint(),
+  }),
 }));
-
-const schema = { account };
 
 test("createIndexing()", async (context) => {
   const { common, sources, networks } = context;
@@ -63,9 +60,9 @@ test("createIndexing()", async (context) => {
     sources,
     networks,
     sync,
+    indexingStore,
+    schema,
   });
-
-  setIndexingStore(indexingService, indexingStore);
 
   expect(indexingService).toBeDefined();
   expect(indexingService.isKilled).toBe(false);
@@ -96,9 +93,9 @@ test("processSetupEvents() empty", async (context) => {
     sources,
     networks,
     sync,
+    indexingStore,
+    schema,
   });
-
-  setIndexingStore(indexingService, indexingStore);
 
   const result = await processSetupEvents(indexingService, {
     sources,
@@ -137,9 +134,9 @@ test("processSetupEvents()", async (context) => {
     sources,
     networks,
     sync,
+    indexingStore,
+    schema,
   });
-
-  setIndexingStore(indexingService, indexingStore);
 
   const result = await processSetupEvents(indexingService, {
     sources,
@@ -211,9 +208,9 @@ test("processEvent() log events", async (context) => {
     sources,
     networks,
     sync,
+    indexingStore,
+    schema,
   });
-
-  setIndexingStore(indexingService, indexingStore);
 
   const rawEvents = await getEventsLog(sources);
   const events = decodeEvents(common, sources, rawEvents);
@@ -299,9 +296,9 @@ test("processEvents() block events", async (context) => {
     sources,
     networks,
     sync,
+    indexingStore,
+    schema,
   });
-
-  setIndexingStore(indexingService, indexingStore);
 
   const rawEvents = await getEventsBlock(sources);
   const events = decodeEvents(common, sources, rawEvents);
@@ -374,9 +371,9 @@ test("processEvents() call trace events", async (context) => {
     sources,
     networks,
     sync,
+    indexingStore,
+    schema,
   });
-
-  setIndexingStore(indexingService, indexingStore);
 
   const rawEvents = await getEventsTrace(sources);
   const events = decodeEvents(common, sources, rawEvents);
@@ -456,9 +453,9 @@ test("processEvents killed", async (context) => {
     sources,
     networks,
     sync,
+    indexingStore,
+    schema,
   });
-
-  setIndexingStore(indexingService, indexingStore);
   kill(indexingService);
 
   const rawEvents = await getEventsLog(sources);
@@ -506,9 +503,9 @@ test("processEvents eventCount", async (context) => {
     sources,
     networks,
     sync,
+    indexingStore,
+    schema,
   });
-
-  setIndexingStore(indexingService, indexingStore);
 
   const rawEvents = await getEventsLog(sources);
   const events = decodeEvents(common, sources, rawEvents);
@@ -556,9 +553,9 @@ test("executeSetup() context.client", async (context) => {
     sources,
     networks,
     sync,
+    indexingStore,
+    schema,
   });
-
-  setIndexingStore(indexingService, indexingStore);
 
   const getBalanceSpy = vi.spyOn(
     indexingService.clientByChainId[1]!,
@@ -599,9 +596,12 @@ test("executeSetup() context.db", async (context) => {
 
   const indexingFunctions = {
     "Erc20:setup": async ({ context }: { context: Context }) => {
-      await context.db
-        .insert(account)
-        .values({ address: zeroAddress, balance: 10n });
+      await context.db.Supply!.create({
+        id: "supply",
+        data: {
+          supply: 0n,
+        },
+      });
     },
   };
 
@@ -611,11 +611,14 @@ test("executeSetup() context.db", async (context) => {
     sources,
     networks,
     sync,
+    indexingStore,
+    schema,
   });
 
-  setIndexingStore(indexingService, indexingStore);
-
-  const insertSpy = vi.spyOn(indexingService.currentEvent.context.db, "insert");
+  const createSpy = vi.spyOn(
+    indexingService.currentEvent.context.db.Supply!,
+    "create",
+  );
 
   const result = await processSetupEvents(indexingService, {
     sources,
@@ -624,12 +627,19 @@ test("executeSetup() context.db", async (context) => {
 
   expect(result).toStrictEqual({ status: "success" });
 
-  expect(insertSpy).toHaveBeenCalledOnce();
+  expect(createSpy).toHaveBeenCalledOnce();
+  expect(createSpy).toHaveBeenCalledWith({
+    id: "supply",
+    data: { supply: 0n },
+  });
 
-  const supply = await indexingStore.find(account, { address: zeroAddress });
+  const supply = await indexingStore.findUnique({
+    tableName: "Supply",
+    id: "supply",
+  });
   expect(supply).toMatchObject({
-    address: zeroAddress,
-    balance: 10n,
+    id: "supply",
+    supply: 0n,
   });
 
   await cleanup();
@@ -660,9 +670,9 @@ test("executeSetup() metrics", async (context) => {
     sources,
     networks,
     sync,
+    indexingStore,
+    schema,
   });
-
-  setIndexingStore(indexingService, indexingStore);
 
   const result = await processSetupEvents(indexingService, {
     sources,
@@ -703,9 +713,9 @@ test("executeSetup() error", async (context) => {
     sources,
     networks,
     sync,
+    indexingStore,
+    schema,
   });
-
-  setIndexingStore(indexingService, indexingStore);
 
   indexingFunctions["Erc20:setup"].mockRejectedValue(new Error());
 
@@ -755,9 +765,9 @@ test("processEvents() context.client", async (context) => {
     sources,
     networks,
     sync,
+    indexingStore,
+    schema,
   });
-
-  setIndexingStore(indexingService, indexingStore);
 
   const getBalanceSpy = vi.spyOn(
     indexingService.clientByChainId[1]!,
@@ -787,7 +797,7 @@ test("processEvents() context.db", async (context) => {
   const { common, sources, networks } = context;
   const { syncStore, indexingStore, cleanup } = await setupDatabaseServices(
     context,
-    { schema, instanceId: "1234" },
+    { schema },
   );
 
   const sync = await createSync({
@@ -800,12 +810,15 @@ test("processEvents() context.db", async (context) => {
     initialCheckpoint: encodeCheckpoint(zeroCheckpoint),
   });
 
-  let i = 0;
-
-  const dbCall = async ({ context }: { event: any; context: Context }) => {
-    await context.db.insert(account).values({
-      address: `0x000000000000000000000000000000000000000${i++}`,
-      balance: 10n,
+  const dbCall = async ({
+    event,
+    context,
+  }: { event: any; context: Context }) => {
+    await context.db.TransferEvent!.create({
+      id: event.transaction?.hash ?? event.block.hash,
+      data: {
+        timestamp: Number(event.block.timestamp),
+      },
     });
   };
 
@@ -821,11 +834,14 @@ test("processEvents() context.db", async (context) => {
     sources,
     networks,
     sync,
+    indexingStore,
+    schema,
   });
 
-  setIndexingStore(indexingService, indexingStore);
-
-  const insertSpy = vi.spyOn(indexingService.currentEvent.context.db, "insert");
+  const createSpy = vi.spyOn(
+    indexingService.currentEvent.context.db.TransferEvent!,
+    "create",
+  );
 
   const rawEvents = [
     ...(await getEventsLog(sources)),
@@ -838,11 +854,13 @@ test("processEvents() context.db", async (context) => {
   });
   expect(result).toStrictEqual({ status: "success" });
 
-  expect(insertSpy).toHaveBeenCalledTimes(5);
+  expect(createSpy).toHaveBeenCalledTimes(5);
 
-  const transferEvents = await indexingStore.sql.select().from(account);
+  const transferEvents = await indexingStore.findMany({
+    tableName: "TransferEvent",
+  });
 
-  expect(transferEvents).toHaveLength(5);
+  expect(transferEvents.items).toHaveLength(5);
 
   await cleanup();
 });
@@ -876,9 +894,9 @@ test("processEvents() metrics", async (context) => {
     sources,
     networks,
     sync,
+    indexingStore,
+    schema,
   });
-
-  setIndexingStore(indexingService, indexingStore);
 
   const rawEvents = [
     ...(await getEventsLog(sources)),
@@ -927,9 +945,9 @@ test("processEvents() error", async (context) => {
     sources,
     networks,
     sync,
+    indexingStore,
+    schema,
   });
-
-  setIndexingStore(indexingService, indexingStore);
 
   indexingFunctions[
     "Erc20:Transfer(address indexed from, address indexed to, uint256 amount)"
@@ -990,9 +1008,9 @@ test("execute() error after killed", async (context) => {
     sources,
     networks,
     sync,
+    indexingStore,
+    schema,
   });
-
-  setIndexingStore(indexingService, indexingStore);
 
   const rawEvents = await getEventsLog(sources);
   const events = decodeEvents(common, sources, rawEvents);
@@ -1030,9 +1048,9 @@ test("ponderActions getBalance()", async (context) => {
     sources,
     networks,
     sync,
+    indexingStore,
+    schema,
   });
-
-  setIndexingStore(indexingService, indexingStore);
 
   const balance = await indexingService.clientByChainId[1]!.getBalance({
     address: BOB,
@@ -1066,9 +1084,9 @@ test("ponderActions getCode()", async (context) => {
     sources,
     networks,
     sync,
+    indexingStore,
+    schema,
   });
-
-  setIndexingStore(indexingService, indexingStore);
 
   const bytecode = await indexingService.clientByChainId[1]!.getCode({
     address: erc20.address,
@@ -1102,9 +1120,9 @@ test("ponderActions getStorageAt()", async (context) => {
     sources,
     networks,
     sync,
+    indexingStore,
+    schema,
   });
-
-  setIndexingStore(indexingService, indexingStore);
 
   const storage = await indexingService.clientByChainId[1]!.getStorageAt({
     address: erc20.address,
@@ -1140,9 +1158,9 @@ test("ponderActions readContract()", async (context) => {
     sources,
     networks,
     sync,
+    indexingStore,
+    schema,
   });
-
-  setIndexingStore(indexingService, indexingStore);
 
   const totalSupply = await indexingService.clientByChainId[1]!.readContract({
     abi: erc20ABI,
@@ -1178,9 +1196,9 @@ test("ponderActions readContract() blockNumber", async (context) => {
     sources,
     networks,
     sync,
+    indexingStore,
+    schema,
   });
-
-  setIndexingStore(indexingService, indexingStore);
 
   const totalSupply = await indexingService.clientByChainId[1]!.readContract({
     abi: erc20ABI,
@@ -1218,9 +1236,9 @@ test.skip("ponderActions multicall()", async (context) => {
     sources,
     networks,
     sync,
+    indexingStore,
+    schema,
   });
-
-  setIndexingStore(indexingService, indexingStore);
 
   const [totalSupply] = await indexingService.clientByChainId[1]!.multicall({
     allowFailure: false,

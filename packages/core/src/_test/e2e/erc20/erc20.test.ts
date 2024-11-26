@@ -35,64 +35,61 @@ const cliOptions = {
   logFormat: "pretty",
 };
 
-test(
-  "erc20",
-  async (context) => {
-    const port = await getFreePort();
+test("erc20", async (context) => {
+  const port = await getFreePort();
 
-    const cleanup = await start({
-      cliOptions: {
-        ...cliOptions,
-        command: "start",
-        port,
-      },
-    });
-
-    await simulate({
-      erc20Address: context.erc20.address,
-      factoryAddress: context.factory.address,
-    });
-
-    await waitForIndexedBlock(port, "mainnet", 8);
-
-    const response = await postGraphql(
+  const cleanup = await start({
+    cliOptions: {
+      ...cliOptions,
+      command: "start",
       port,
-      `
+    },
+  });
+
+  await simulate({
+    erc20Address: context.erc20.address,
+    factoryAddress: context.factory.address,
+  });
+
+  await waitForIndexedBlock(port, "mainnet", 8);
+
+  const response = await postGraphql(
+    port,
+    `
     accounts {
       items {
-        address
+        id
         balance
       }
     }
     `,
-    );
+  );
 
-    expect(response.status).toBe(200);
-    const body = (await response.json()) as any;
-    expect(body.errors).toBe(undefined);
-    const accounts = body.data.accounts.items;
-    expect(accounts[0]).toMatchObject({
-      address: zeroAddress,
-      balance: (-2 * 10 ** 18).toString(),
-    });
-    expect(accounts[1]).toMatchObject({
-      address: BOB.toLowerCase(),
-      balance: (2 * 10 ** 18).toString(),
-    });
-    expect(accounts[2]).toMatchObject({
-      address: ALICE.toLowerCase(),
-      balance: "0",
-    });
+  expect(response.status).toBe(200);
+  const body = (await response.json()) as any;
+  expect(body.errors).toBe(undefined);
+  const accounts = body.data.accounts.items;
 
-    await cleanup();
-  },
-  { timeout: 15_000 },
-);
+  expect(accounts[0]).toMatchObject({
+    id: zeroAddress,
+    balance: (-2 * 10 ** 18).toString(),
+  });
+  expect(accounts[1]).toMatchObject({
+    id: BOB.toLowerCase(),
+    balance: (2 * 10 ** 18).toString(),
+  });
+  expect(accounts[2]).toMatchObject({
+    id: ALICE.toLowerCase(),
+    balance: "0",
+  });
 
-const isPglite = !!process.env.DATABASE_URL;
+  await cleanup();
+});
+
+const shouldSkip = process.env.DATABASE_URL === undefined;
 
 // Fix this once it's easier to have per-command kill functions in Ponder.ts.
-describe.skipIf(isPglite)("postgres database", () => {
+describe.skipIf(shouldSkip)("postgres database", () => {
   test.todo("ponder serve", async (context) => {
     const startPort = await getFreePort();
 
@@ -126,7 +123,7 @@ describe.skipIf(isPglite)("postgres database", () => {
       `
       accounts {
         items {
-          address
+          id
           balance
         }
       }
@@ -140,15 +137,15 @@ describe.skipIf(isPglite)("postgres database", () => {
 
     expect(accounts).toHaveLength(3);
     expect(accounts[0]).toMatchObject({
-      address: zeroAddress,
+      id: zeroAddress,
       balance: (-4 * 10 ** 18).toString(),
     });
     expect(accounts[1]).toMatchObject({
-      address: BOB.toLowerCase(),
+      id: BOB.toLowerCase(),
       balance: (4 * 10 ** 18).toString(),
     });
     expect(accounts[2]).toMatchObject({
-      address: ALICE.toLowerCase(),
+      id: ALICE.toLowerCase(),
       balance: "0",
     });
 

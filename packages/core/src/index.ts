@@ -1,4 +1,5 @@
 export { createConfig } from "@/config/config.js";
+export { createSchema } from "@/schema/schema.js";
 export type {
   Block,
   Log,
@@ -23,16 +24,7 @@ export type NetworkConfig = Prettify<Config["networks"][string]>;
 export type BlockConfig = Prettify<Config["blocks"][string]>;
 export type DatabaseConfig = Prettify<Config["database"]>;
 
-export {
-  onchainTable,
-  onchainSchema,
-  onchainEnum,
-  primaryKey,
-  hex,
-  bigint,
-} from "@/drizzle/index.js";
-
-export { graphql } from "@/graphql/middleware.js";
+export { graphql } from "@/graphql/index.js";
 
 export {
   sql,
@@ -65,41 +57,6 @@ export {
   sumDistinct,
   max,
   min,
-  relations,
 } from "drizzle-orm";
 
-export {
-  bigint as int8,
-  boolean,
-  char,
-  cidr,
-  date,
-  doublePrecision,
-  inet,
-  integer,
-  interval,
-  json,
-  jsonb,
-  line,
-  macaddr,
-  macaddr8,
-  numeric,
-  point,
-  real,
-  smallint,
-  text,
-  time,
-  timestamp,
-  uuid,
-  varchar,
-  index,
-  uniqueIndex,
-  alias,
-  foreignKey,
-  union,
-  unionAll,
-  intersect,
-  intersectAll,
-  except,
-  exceptAll,
-} from "drizzle-orm/pg-core";
+export { alias } from "@/drizzle/runtime.js";

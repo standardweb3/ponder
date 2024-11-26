@@ -35,28 +35,19 @@ export async function buildConfigAndIndexingFunctions({
   config: Config;
   rawIndexingFunctions: RawIndexingFunctions;
   options: Pick<Options, "ponderDir" | "rootDir">;
-}): Promise<{
-  databaseConfig: DatabaseConfig;
-  networks: Network[];
-  sources: (BlockSource | ContractSource)[];
-  indexingFunctions: IndexingFunctions;
-  logs: { level: "warn" | "info" | "debug"; msg: string }[];
-}> {
+}) {
   const logs: { level: "warn" | "info" | "debug"; msg: string }[] = [];
 
   // Build database.
   let databaseConfig: DatabaseConfig;
 
-  // Determine PGlite directory, preferring config.database.directory if available
-  const pgliteDir =
-    config.database?.kind === "pglite" && config.database.directory
-      ? config.database.directory === "memory://"
-        ? "memory://"
-        : path.resolve(config.database.directory)
-      : path.join(ponderDir, "pglite");
+  // Determine SQLite directory, preferring config.database.directory if available
+  const sqliteDir =
+    config.database?.kind === "sqlite" && config.database.directory
+      ? path.resolve(config.database.directory)
+      : path.join(ponderDir, "sqlite");
 
-  const pglitePrintPath =
-    pgliteDir === "memory://" ? "memory://" : path.relative(rootDir, pgliteDir);
+  const sqlitePrintPath = path.relative(rootDir, sqliteDir);
 
   if (config.database?.kind) {
     if (config.database.kind === "postgres") {
@@ -83,19 +74,47 @@ export async function buildConfigAndIndexingFunctions({
         msg: `Using Postgres database '${getDatabaseName(connectionString)}' (${source})`,
       });
 
+      let schema: string | undefined = undefined;
+      if (config.database.schema) {
+        schema = config.database.schema;
+        source = "from ponder.config.ts";
+      } else if (process.env.RAILWAY_DEPLOYMENT_ID) {
+        if (process.env.RAILWAY_SERVICE_NAME === undefined) {
+          throw new Error(
+            "Invalid database configuration: RAILWAY_DEPLOYMENT_ID env var is defined, but RAILWAY_SERVICE_NAME env var is not.",
+          );
+        }
+        schema = `${process.env.RAILWAY_SERVICE_NAME}_${process.env.RAILWAY_DEPLOYMENT_ID.slice(
+          0,
+          8,
+        )}`;
+        source = "from RAILWAY_DEPLOYMENT_ID env var";
+      } else {
+        schema = "public";
+        source = "default";
+      }
+      logs.push({
+        level: "info",
+        msg: `Using '${schema}' database schema for indexed tables (${source})`,
+      });
+
       const poolConfig = {
         max: config.database.poolConfig?.max ?? 30,
         connectionString,
       };
 
-      databaseConfig = { kind: "postgres", poolConfig };
+      databaseConfig = {
+        kind: "postgres",
+        poolConfig,
+        schema,
+      };
     } else {
       logs.push({
         level: "info",
-        msg: `Using PGlite database in '${pglitePrintPath}' (from ponder.config.ts)`,
+        msg: `Using SQLite database in '${sqlitePrintPath}' (from ponder.config.ts)`,
       });
 
-      databaseConfig = { kind: "pglite", options: { dataDir: pgliteDir } };
+      databaseConfig = { kind: "sqlite", directory: sqliteDir };
     }
   } else {
     let connectionString: string | undefined = undefined;
@@ -115,17 +134,43 @@ export async function buildConfigAndIndexingFunctions({
         msg: `Using Postgres database ${getDatabaseName(connectionString)} (${source})`,
       });
 
-      const poolConfig = { max: 30, connectionString };
-
-      databaseConfig = { kind: "postgres", poolConfig };
-    } else {
-      // Fall back to PGlite.
+      let schema: string | undefined = undefined;
+      if (process.env.RAILWAY_DEPLOYMENT_ID !== undefined) {
+        schema = process.env.RAILWAY_DEPLOYMENT_ID;
+        if (process.env.RAILWAY_SERVICE_NAME === undefined) {
+          throw new Error(
+            "Invalid database configuration: RAILWAY_DEPLOYMENT_ID env var is defined, but RAILWAY_SERVICE_NAME env var is not.",
+          );
+        }
+        schema = `${process.env.RAILWAY_SERVICE_NAME}_${process.env.RAILWAY_DEPLOYMENT_ID.slice(
+          0,
+          8,
+        )}`;
+        source = "from RAILWAY_DEPLOYMENT_ID env var";
+      } else {
+        schema = "public";
+        source = "default";
+      }
       logs.push({
         level: "info",
-        msg: `Using PGlite database at ${pglitePrintPath} (default)`,
+        msg: `Using '${schema}' database schema for indexed tables (${source})`,
       });
 
-      databaseConfig = { kind: "pglite", options: { dataDir: pgliteDir } };
+      const poolConfig = { max: 30, connectionString };
+
+      databaseConfig = {
+        kind: "postgres",
+        poolConfig,
+        schema,
+      };
+    } else {
+      // Fall back to SQLite.
+      logs.push({
+        level: "info",
+        msg: `Using SQLite database at ${sqlitePrintPath} (default)`,
+      });
+
+      databaseConfig = { kind: "sqlite", directory: sqliteDir };
     }
   }
 

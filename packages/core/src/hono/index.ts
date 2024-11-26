@@ -15,7 +15,7 @@ export const applyHonoRoutes = (
   customContext?: object,
 ) => {
   // add custom properties to hono context
-  const customContextWrapper =
+  const addCustomContext =
     (handler: Handler | MiddlewareHandler) => (c: any, next: any) => {
       for (const key of Object.keys(customContext ?? {})) {
         // @ts-ignore
@@ -36,18 +36,14 @@ export const applyHonoRoutes = (
       if (typeof maybePathOrHandler === "string") {
         path = maybePathOrHandler;
       } else {
-        hono[method === "GET" ? "get" : "put"](
-          path,
-          customContextWrapper(maybePathOrHandler),
-        );
+        // @ts-expect-error access private property
+        hono.addRoute(method, path, addCustomContext(maybePathOrHandler));
       }
 
       for (const handler of handlers) {
         if (typeof handler !== "string") {
-          hono[method === "GET" ? "get" : "put"](
-            path,
-            customContextWrapper(handler),
-          );
+          // @ts-expect-error access private property
+          hono.addRoute(method, path, addCustomContext(handler));
         }
       }
     } else {
@@ -60,7 +56,8 @@ export const applyHonoRoutes = (
         handlers.unshift(maybePathOrHandler);
       }
       for (const handler of handlers) {
-        hono.use(path, customContextWrapper(handler));
+        // @ts-expect-error access private property
+        hono.addRoute("ALL", path, addCustomContext(handler));
       }
     }
   }

@@ -1,6 +1,5 @@
 import { ponder } from "@/generated";
 import { parseAbi } from "viem";
-import * as schema from "../ponder.schema";
 
 ponder.on("ChainlinkPriceOracle:block", async ({ event, context }) => {
   const price = await context.client.readContract({
@@ -9,8 +8,10 @@ ponder.on("ChainlinkPriceOracle:block", async ({ event, context }) => {
     functionName: "latestAnswer",
   });
 
-  await context.db.insert(schema.chainlinkPrice).values({
-    timestamp: event.block.timestamp,
-    price: Number(price) / 10 ** 8,
+  await context.db.ChainlinkPrice.create({
+    id: event.block.timestamp,
+    data: {
+      price: Number(price) / 10 ** 8,
+    },
   });
 });

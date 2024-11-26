@@ -1,51 +1,62 @@
-import { onchainTable, primaryKey } from "@ponder/core";
+import { createSchema } from "@ponder/core";
 
-export const account = onchainTable("account", (t) => ({
-  address: t.hex().primaryKey(),
-  balance: t.bigint().notNull(),
-}));
+export default createSchema((p) => ({
+  Account: p.createTable({
+    id: p.hex(),
+    balance: p.bigint(),
+    isOwner: p.boolean(),
 
-export const allowance = onchainTable(
-  "allowance",
-  (t) => ({
-    owner: t.hex(),
-    spender: t.hex(),
-    amount: t.bigint().notNull(),
+    allowances: p.many("Allowance.ownerId"),
+    approvalOwnerEvents: p.many("ApprovalEvent.ownerId"),
+    approvalSpenderEvents: p.many("ApprovalEvent.spenderId"),
+    transferFromEvents: p.many("TransferEvent.fromId"),
+    transferToEvents: p.many("TransferEvent.toId"),
   }),
-  (table) => ({
-    pk: primaryKey({ columns: [table.owner, table.spender] }),
+  Allowance: p.createTable({
+    id: p.string(),
+    amount: p.bigint(),
+
+    ownerId: p.hex().references("Account.id"),
+    spenderId: p.hex().references("Account.id"),
+
+    owner: p.one("ownerId"),
+    spender: p.one("spenderId"),
   }),
-);
+  TransferEvent: p.createTable({
+    id: p.string(),
+    amount: p.bigint(),
+    timestamp: p.int(),
 
-export const transferEvent = onchainTable("transfer_event", (t) => ({
-  id: t.text().primaryKey(),
-  amount: t.bigint().notNull(),
-  timestamp: t.integer().notNull(),
-  from: t.hex().notNull(),
-  to: t.hex().notNull(),
-}));
+    fromId: p.hex().references("Account.id"),
+    toId: p.hex().references("Account.id"),
 
-export const approvalEvent = onchainTable("approval_event", (t) => ({
-  id: t.text().primaryKey(),
-  amount: t.bigint().notNull(),
-  timestamp: t.integer().notNull(),
-  owner: t.hex().notNull(),
-  spender: t.hex().notNull(),
-}));
+    from: p.one("fromId"),
+    to: p.one("toId"),
+  }),
+  ApprovalEvent: p.createTable({
+    id: p.string(),
+    amount: p.bigint(),
+    timestamp: p.int(),
 
-export const depositEvent = onchainTable("deposit_event", (t) => ({
-  id: t.text().primaryKey(),
-  sender: t.hex().notNull(),
-  receiver: t.hex().notNull(),
-  assets: t.bigint().notNull(),
-  shares: t.bigint().notNull(),
-}));
+    ownerId: p.hex().references("Account.id"),
+    spenderId: p.hex().references("Account.id"),
 
-export const withdrawalEvent = onchainTable("withdrawal_event", (t) => ({
-  id: t.text().primaryKey(),
-  sender: t.hex().notNull(),
-  receiver: t.hex().notNull(),
-  owner: t.hex().notNull(),
-  assets: t.bigint().notNull(),
-  shares: t.bigint().notNull(),
+    owner: p.one("ownerId"),
+    spender: p.one("spenderId"),
+  }),
+  DepositEvent: p.createTable({
+    id: p.string(),
+    sender: p.hex().references("Account.id"),
+    receiver: p.hex().references("Account.id"),
+    assets: p.bigint(),
+    shares: p.bigint(),
+  }),
+  WithdrawEvent: p.createTable({
+    id: p.string(),
+    sender: p.hex().references("Account.id"),
+    receiver: p.hex().references("Account.id"),
+    owner: p.hex().references("Account.id"),
+    assets: p.bigint(),
+    shares: p.bigint(),
+  }),
 }));

@@ -1,8 +1,8 @@
 import { createConfig } from "@/config/config.js";
-import { onchainTable } from "@/drizzle/index.js";
+import type { DrizzleDb } from "@/drizzle/db.js";
+import { createSchema, createTable } from "@/schema/schema.js";
 import { http, type Abi, type Address, type Hex, parseAbiItem } from "viem";
 import { assertType, test } from "vitest";
-import type { Db } from "./db.js";
 import type {
   Block,
   CallTrace,
@@ -10,6 +10,7 @@ import type {
   Transaction,
   TransactionReceipt,
 } from "./eth.js";
+import type { DatabaseModel } from "./model.js";
 import type { Virtual } from "./virtual.js";
 
 const event0 = parseAbiItem(
@@ -81,12 +82,11 @@ const config = createConfig({
   },
 });
 
-const account = onchainTable("account", (p) => ({
-  address: p.hex().primaryKey(),
-  balance: p.bigint().notNull(),
+const schema = createSchema((p) => ({
+  table: createTable({
+    id: p.string(),
+  }),
 }));
-
-const schema = { account };
 
 test("FormatEventNames without filter", () => {
   type a = Virtual.FormatEventNames<
@@ -210,8 +210,10 @@ test("Context db", () => {
   type a = Virtual.Context<typeof config, typeof schema, "c1:Event0">["db"];
   //   ^?
 
-  assertType<a>({} as any as Db<typeof schema>);
-  assertType<Db<typeof schema>>({} as any as a);
+  type expectedDB = { table: DatabaseModel<{ id: string }> };
+
+  assertType<a>({} as any as expectedDB);
+  assertType<expectedDB>({} as any as a);
 });
 
 test("Context single network", () => {
@@ -435,4 +437,10 @@ test("Registry", () => {
     context.contracts.c1;
     context.contracts.c2;
   });
+});
+
+test("Drizzle", () => {
+  type a = Virtual.Drizzle<typeof schema>;
+
+  assertType<a>({} as any as { db: DrizzleDb; tables: { table: any } });
 });

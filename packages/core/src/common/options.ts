@@ -1,5 +1,5 @@
+import os from "node:os";
 import path from "node:path";
-import v8 from "node:v8";
 import type { CliOptions } from "@/bin/ponder.js";
 import type { LevelWithSilent } from "pino";
 
@@ -28,6 +28,7 @@ export type Options = {
   databaseHeartbeatInterval: number;
   databaseHeartbeatTimeout: number;
   databaseMaxQueryParameters: number;
+  databaseMaxRowLimit: number;
 
   factoryAddressCountThreshold: number;
 
@@ -98,23 +99,17 @@ export const buildOptions = ({ cliOptions }: { cliOptions: CliOptions }) => {
 
     databaseHeartbeatInterval: 10 * 1000,
     databaseHeartbeatTimeout: 25 * 1000,
-    // Half of the max query parameters for PGlite
+    // Half of the max query parameters for SQLite
     databaseMaxQueryParameters: 16_000,
+    databaseMaxRowLimit: 1_000,
 
     factoryAddressCountThreshold: 1_000,
 
-    // v8.getHeapStatistics().heap_size_limit / 8, bucketed closest to 128, 256, 512, 1024, 2048 mB
+    // os.freemem() / 4, bucketed closest to 64, 128, 256, 512, 1024, 2048 mB
     indexingCacheMaxBytes:
       2 **
         Math.min(
-          Math.max(
-            Math.round(
-              Math.log2(
-                v8.getHeapStatistics().heap_size_limit / 1_024 / 1_024 / 8,
-              ),
-            ),
-            7,
-          ),
+          Math.max(Math.round(Math.log2(os.freemem() / 1_024 / 1_024 / 4)), 6),
           11,
         ) *
       1_024 *

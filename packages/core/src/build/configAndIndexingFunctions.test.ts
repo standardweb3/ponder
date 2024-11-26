@@ -403,10 +403,10 @@ test("buildConfigAndIndexingFunctions() validates address empty string", async (
         address: "" as Address,
       },
     },
-  });
+  }) as Config;
 
   const result = await safeBuildConfigAndIndexingFunctions({
-    config: config as unknown as Config,
+    config,
     rawIndexingFunctions: [{ name: "a:Event0", fn: () => {} }],
     options,
   });
@@ -430,10 +430,10 @@ test("buildConfigAndIndexingFunctions() validates address prefix", async () => {
         address: "0b0000000000000000000000000000000000000001" as Address,
       },
     },
-  });
+  }) as Config;
 
   const result = await safeBuildConfigAndIndexingFunctions({
-    config: config as unknown as Config,
+    config,
     rawIndexingFunctions: [{ name: "a:Event0", fn: () => {} }],
     options,
   });
@@ -630,7 +630,7 @@ test("buildConfigAndIndexingFunctions() coerces NaN endBlock to undefined", asyn
   expect(sources[0]!.filter.toBlock).toBe(undefined);
 });
 
-test("buildConfigAndIndexingFunctions() database uses pglite by default", async () => {
+test("buildConfigAndIndexingFunctions() database uses sqlite by default", async () => {
   const config = createConfig({
     networks: { mainnet: { chainId: 1, transport: http() } },
     contracts: { a: { network: "mainnet", abi: [event0] } },
@@ -646,18 +646,16 @@ test("buildConfigAndIndexingFunctions() database uses pglite by default", async 
     options,
   });
   expect(databaseConfig).toMatchObject({
-    kind: "pglite",
-    options: {
-      dataDir: expect.stringContaining(path.join(".ponder", "pglite")),
-    },
+    kind: "sqlite",
+    directory: expect.stringContaining(path.join(".ponder", "sqlite")),
   });
 
   process.env.DATABASE_URL = prev;
 });
 
-test("buildConfigAndIndexingFunctions() database respects custom pglite path", async () => {
+test("buildConfigAndIndexingFunctions() database respects custom sqlite path", async () => {
   const config = createConfig({
-    database: { kind: "pglite", directory: "custom-pglite/directory" },
+    database: { kind: "sqlite", directory: "custom-sqlite/directory" },
     networks: { mainnet: { chainId: 1, transport: http() } },
     contracts: { a: { network: "mainnet", abi: [event0] } },
   });
@@ -669,16 +667,14 @@ test("buildConfigAndIndexingFunctions() database respects custom pglite path", a
   });
 
   expect(databaseConfig).toMatchObject({
-    kind: "pglite",
-    options: {
-      dataDir: expect.stringContaining(path.join("custom-pglite", "directory")),
-    },
+    kind: "sqlite",
+    directory: expect.stringContaining(path.join("custom-sqlite", "directory")),
   });
 });
 
-test("buildConfigAndIndexingFunctions() database uses pglite if specified even if DATABASE_URL env var present", async () => {
+test("buildConfigAndIndexingFunctions() database uses sqlite if specified even if DATABASE_URL env var present", async () => {
   const config = createConfig({
-    database: { kind: "pglite" },
+    database: { kind: "sqlite" },
     networks: { mainnet: { chainId: 1, transport: http() } },
     contracts: { a: { network: "mainnet", abi: [event0] } },
   });
@@ -691,10 +687,8 @@ test("buildConfigAndIndexingFunctions() database uses pglite if specified even i
     options,
   });
   expect(databaseConfig).toMatchObject({
-    kind: "pglite",
-    options: {
-      dataDir: expect.stringContaining(path.join(".ponder", "pglite")),
-    },
+    kind: "sqlite",
+    directory: expect.stringContaining(path.join(".ponder", "sqlite")),
   });
 
   vi.unstubAllEnvs();
@@ -718,6 +712,7 @@ test("buildConfigAndIndexingFunctions() database uses postgres if DATABASE_URL e
     poolConfig: {
       connectionString: "postgres://username@localhost:5432/database",
     },
+    schema: "public",
   });
 
   vi.unstubAllEnvs();
@@ -745,6 +740,7 @@ test("buildConfigAndIndexingFunctions() database uses postgres if DATABASE_PRIVA
     poolConfig: {
       connectionString: "postgres://username@localhost:5432/better_database",
     },
+    schema: "public",
   });
 
   vi.unstubAllEnvs();
@@ -796,5 +792,54 @@ test("buildConfigAndIndexingFunctions() database with postgres uses pool config"
       connectionString: "postgres://username@localhost:5432/database",
       max: 100,
     },
+    schema: "public",
   });
+});
+
+test("buildConfigAndIndexingFunctions() database with postgres uses RAILWAY_DEPLOYMENT_ID if defined", async () => {
+  const config = createConfig({
+    networks: { mainnet: { chainId: 1, transport: http() } },
+    contracts: { a: { network: "mainnet", abi: [event0] } },
+  });
+
+  vi.stubEnv("DATABASE_URL", "postgres://username@localhost:5432/database");
+  vi.stubEnv("RAILWAY_DEPLOYMENT_ID", "b39cb9b7-7ef8-4dc4-8035-74344c11c4f2");
+  vi.stubEnv("RAILWAY_SERVICE_NAME", "multichain-indexer");
+
+  const { databaseConfig } = await buildConfigAndIndexingFunctions({
+    config,
+    rawIndexingFunctions: [{ name: "a:Event0", fn: () => {} }],
+    options,
+  });
+  expect(databaseConfig).toMatchObject({
+    kind: "postgres",
+    poolConfig: {
+      connectionString: "postgres://username@localhost:5432/database",
+    },
+    schema: "multichain-indexer_b39cb9b7",
+  });
+
+  vi.unstubAllEnvs();
+});
+
+test("buildConfigAndIndexingFunctions() database throws with RAILWAY_DEPLOYMENT_ID but no RAILWAY_SERVICE_NAME", async () => {
+  const config = createConfig({
+    networks: { mainnet: { chainId: 1, transport: http() } },
+    contracts: { a: { network: "mainnet", abi: [event0] } },
+  });
+
+  vi.stubEnv("DATABASE_URL", "postgres://username@localhost:5432/database");
+  vi.stubEnv("RAILWAY_DEPLOYMENT_ID", "b39cb9b7-7ef8-4dc4-8035-74344c11c4f2");
+
+  await expect(() =>
+    buildConfigAndIndexingFunctions({
+      config,
+      rawIndexingFunctions: [{ name: "a:Event0", fn: () => {} }],
+      options,
+    }),
+  ).rejects.toThrow(
+    "Invalid database configuration: RAILWAY_DEPLOYMENT_ID env var is defined, but RAILWAY_SERVICE_NAME env var is not.",
+  );
+
+  vi.unstubAllEnvs();
 });
