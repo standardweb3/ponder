@@ -2,7 +2,7 @@
 
 Thanks for your interest in contributing to Ponder! Please take a moment to review this document **before submitting a pull request.**
 
-If you want to contribute, but aren't sure where to start, reach out in Ponder's [public telegram group](https://t.me/ponder_sh) or create a [new discussion](https://github.com/ponder-sh/ponder/discussions).
+If you want to contribute, but aren't sure where to start, reach out in Ponder's [public telegram group](https://t.me/ponder_sh) or create a [new discussion](https://github.com/standardweb3/ponder/discussions).
 
 ## Get started
 
@@ -27,7 +27,7 @@ This guide is intended to help you get started with contributing. By following t
 
 ## Fork the repository
 
-To start contributing to the project, [create a fork](https://github.com/ponder-sh/ponder/fork) and clone it to your machine using `git clone`.
+To start contributing to the project, [create a fork](https://github.com/standardweb3/ponder/fork) and clone it to your machine using `git clone`.
 
 Or, use the [GitHub CLI](https://cli.github.com) to create a fork and clone it in one command:
 
@@ -184,6 +184,6 @@ When you're ready to release, merge the `"chore: version packages"` PR into `mai
 
 ## That's it!
 
-If you still have questions, please reach out in Ponder's [public telegram group](https://t.me/ponder_sh) or create a [new discussion](https://github.com/ponder-sh/ponder/discussions).
+If you still have questions, please reach out in Ponder's [public telegram group](https://t.me/ponder_sh) or create a [new discussion](https://github.com/standardweb3/ponder/discussions).
 
 This guide was adapted from [viem](https://github.com/wagmi-dev/viem/blob/main/.github/CONTRIBUTING.md)'s contribution guide. ❤️

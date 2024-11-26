@@ -2,7 +2,13 @@
   "$schema": "https://unpkg.com/@changesets/config@2.3.0/schema.json",
   "changelog": ["@changesets/changelog-github", { "repo": "ponder-sh/ponder" }],
   "commit": false,
-  "fixed": [["@ponder/core", "create-ponder", "eslint-config-ponder"]],
+  "fixed": [
+    [
+      "@standardweb3/ponder-core",
+      "@standardweb3/create-ponder",
+      "eslint-config-ponder"
+    ]
+  ],
   "ignore": [
     "@ponder/common",
     "ponder-examples-feature-blocks",
