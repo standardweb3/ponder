@@ -41,8 +41,8 @@ export const graphiQLHtml = (path: string) => `<!--
     <div id="graphiql">Loading...</div>
     <script crossorigin src="https://unpkg.com/react/umd/react.development.js"></script>1
     <script crossorigin src="https://unpkg.com/react-dom/umd/react-dom.development.js"></script>
-    <script src="https://unpkg.com/graphiql/graphiql.min.js" crossorigin="anonymous"></script>
-    <script src="https://unpkg.com/@graphiql/plugin-explorer/dist/index.umd.js" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/graphiql@3.7.2/graphiql.min.js" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/@graphiql/plugin-explorer@3.2.3/dist/index.umd.js" crossorigin="anonymous"></script>
     <script>
       const fetcher = GraphiQL.createFetcher({ url: "${path}" });
       const explorerPlugin = GraphiQLPluginExplorer.explorerPlugin();
