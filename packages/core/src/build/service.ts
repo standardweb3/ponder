@@ -226,7 +226,11 @@ export const start = async (
   // don't register  any event handlers on the watcher.
   if (watch) {
     // Define the directories and files to ignore
-    const ignoredDirs = [common.options.generatedDir, common.options.ponderDir];
+    const ignoredDirs = [
+      common.options.generatedDir,
+      common.options.ponderDir,
+      common.options.apiDir,
+    ];
     const ignoredFiles = [
       path.join(common.options.rootDir, "ponder-env.d.ts"),
       path.join(common.options.rootDir, ".env.local"),
