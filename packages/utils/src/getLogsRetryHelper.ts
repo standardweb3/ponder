@@ -278,6 +278,25 @@ export const getLogsRetryHelper = ({
     } as const;
   }
 
+  // somnia
+  match = sError.match(/block range exceeds ([\d,.]+)/);
+  if (match !== null) {
+    const ranges = chunk({
+      params,
+      range: BigInt(match[1]!.replace(/[,.]/g, "")),
+    });
+
+    if (isRangeUnchanged(params, ranges)) {
+      return { shouldRetry: false } as const;
+    }
+
+    return {
+      shouldRetry: true,
+      ranges,
+      isSuggestedRange: true,
+    } as const;
+  }
+
   // blast (paid)
   match = sError.match(
     /exceeds the range allowed for your plan \(\d+ > (\d+)\)/,
