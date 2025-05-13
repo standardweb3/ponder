@@ -569,8 +569,10 @@ const convertTransaction = (transaction: SyncTransaction): Transaction => ({
       : transaction.type === "0x2"
         ? {
             type: "eip1559",
-            maxFeePerGas: hexToBigInt(transaction.maxFeePerGas),
-            maxPriorityFeePerGas: hexToBigInt(transaction.maxPriorityFeePerGas),
+            maxFeePerGas: hexToBigInt(transaction.maxFeePerGas ?? "0x0"),
+            maxPriorityFeePerGas: hexToBigInt(
+              transaction.maxPriorityFeePerGas ?? "0x0",
+            ),
           }
         : // @ts-ignore
           transaction.type === "0x7e"

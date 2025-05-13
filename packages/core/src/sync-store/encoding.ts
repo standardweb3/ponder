@@ -69,6 +69,13 @@ export const encodeBlock = ({
   chainId: number;
   dialect: "sqlite" | "postgres";
 }): Insertable<BlocksTable> => {
+  const somniaZeroLogsBloom =
+    "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+
+  if (block.logsBloom === somniaZeroLogsBloom) {
+    console.log(block);
+  }
+
   return {
     hash: block.hash,
     chainId,
@@ -96,11 +103,12 @@ export const encodeBlock = ({
     parentHash: block.parentHash,
     receiptsRoot: block.receiptsRoot,
     sha3Uncles: block.sha3Uncles ?? null,
-    size: formatHex(dialect, block.size),
+    size: formatHex(dialect, block.size ?? "0x0"),
     stateRoot: block.stateRoot,
-    totalDifficulty: block.totalDifficulty
-      ? formatHex(dialect, block.totalDifficulty)
-      : null,
+    totalDifficulty:
+      block.totalDifficulty !== undefined && block.totalDifficulty !== null
+        ? formatHex(dialect, block.totalDifficulty ?? block.difficulty)
+        : null,
     transactionsRoot: block.transactionsRoot,
   };
 };

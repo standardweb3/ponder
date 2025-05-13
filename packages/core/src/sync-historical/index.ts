@@ -485,8 +485,11 @@ export const createHistoricalSync = async (
           const interval: Interval = [
             Math.max(source.filter.fromBlock, _interval[0]),
             Math.min(
-              source.filter.toBlock ?? Number.POSITIVE_INFINITY,
-              _interval[1],
+              source.filter.fromBlock + 1_000,
+              Math.min(
+                source.filter.toBlock ?? Number.POSITIVE_INFINITY,
+                _interval[1],
+              ),
             ),
           ];
           const completedIntervals = intervalsCache.get(source.filter)!;

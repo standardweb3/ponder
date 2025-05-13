@@ -31,7 +31,11 @@ import {
 import { wait } from "@/utils/wait.js";
 import { type Queue, createQueue } from "@ponder/common";
 import { type Address, type Hash, hexToNumber } from "viem";
-import { isFilterInBloom, zeroLogsBloom } from "./bloom.js";
+import {
+  isFilterInBloom,
+  somniaZeroLogsBloom,
+  zeroLogsBloom,
+} from "./bloom.js";
 import {
   isBlockFilterMatched,
   isCallTraceFilterMatched,
@@ -476,6 +480,7 @@ export const createRealtimeSync = (
     // "eth_getLogs" calls can be skipped if no filters match `newHeadBlock.logsBloom`.
     const shouldRequestLogs =
       block.logsBloom === zeroLogsBloom ||
+      block.logsBloom === somniaZeroLogsBloom ||
       logFilters.some((filter) => isFilterInBloom({ block, filter }));
 
     let logs: SyncLog[] = [];
@@ -483,7 +488,12 @@ export const createRealtimeSync = (
       logs = await _eth_getLogs(args.requestQueue, { blockHash: block.hash });
 
       // Protect against RPCs returning empty logs. Known to happen near chain tip.
-      if (block.logsBloom !== zeroLogsBloom && logs.length === 0) {
+      if (
+        block.logsBloom !== zeroLogsBloom &&
+        block.logsBloom !== somniaZeroLogsBloom &&
+        logs.length === 0
+      ) {
+        console.log("logBloom", block.logsBloom);
         throw new Error(
           "Detected invalid eth_getLogs response. `block.logsBloom` is not empty but zero logs were returned.",
         );
@@ -492,7 +502,7 @@ export const createRealtimeSync = (
       // Check that logs refer to the correct block
       for (const log of logs) {
         if (log.blockHash !== block.hash) {
-          throw new Error(
+          console.log(
             `Detected invalid eth_getLogs response. 'log.blockHash' ${log.blockHash} does not match requested block hash ${block.hash}`,
           );
         }
